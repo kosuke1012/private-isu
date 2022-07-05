@@ -8,6 +8,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/http/pprof"
 	"net/url"
 	"os"
 	"os/exec"
@@ -874,6 +875,10 @@ func main() {
 	mux.HandleFunc(pat.Get("/admin/banned"), getAdminBanned)
 	mux.HandleFunc(pat.Post("/admin/banned"), postAdminBanned)
 	mux.HandleFunc(Regexp(regexp.MustCompile(`^/@(?P<accountName>[a-zA-Z]+)$`)), getAccountName)
+	mux.HandleFunc(pat.Get("/debug/pprof/"), pprof.Index)
+	mux.HandleFunc(pat.Get("/debug/pprof/cmdline"), pprof.Cmdline)
+	mux.HandleFunc(pat.Get("/debug/pprof/profile"), pprof.Profile)
+	mux.HandleFunc(pat.Get("/debug/pprof/symbol"), pprof.Symbol)
 	mux.Handle(pat.Get("/*"), http.FileServer(http.Dir("../public")))
 
 	log.Fatal(http.ListenAndServe(":8080", mux))

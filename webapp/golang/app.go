@@ -211,56 +211,57 @@ func makePostsWithLimit(results []Post, csrfToken string) ([]Post, error) {
 	return posts, nil
 
 }
-func makePosts(results []Post, csrfToken string, allComments bool) ([]Post, error) {
-	var posts []Post
 
-	for _, p := range results {
-		err := db.Get(&p.CommentCount, "SELECT COUNT(*) AS `count` FROM `comments` WHERE `post_id` = ?", p.ID)
-		if err != nil {
-			return nil, err
-		}
+// func makePosts(results []Post, csrfToken string, allComments bool) ([]Post, error) {
+// 	var posts []Post
 
-		query := "SELECT * FROM `comments` WHERE `post_id` = ? ORDER BY `created_at` DESC"
-		if !allComments {
-			query += " LIMIT 3"
-		}
-		var comments []Comment
-		err = db.Select(&comments, query, p.ID)
-		if err != nil {
-			return nil, err
-		}
+// 	for _, p := range results {
+// 		err := db.Get(&p.CommentCount, "SELECT COUNT(*) AS `count` FROM `comments` WHERE `post_id` = ?", p.ID)
+// 		if err != nil {
+// 			return nil, err
+// 		}
 
-		for i := 0; i < len(comments); i++ {
-			err := db.Get(&comments[i].User, "SELECT * FROM `users` WHERE `id` = ?", comments[i].UserID)
-			if err != nil {
-				return nil, err
-			}
-		}
+// 		query := "SELECT * FROM `comments` WHERE `post_id` = ? ORDER BY `created_at` DESC"
+// 		if !allComments {
+// 			query += " LIMIT 3"
+// 		}
+// 		var comments []Comment
+// 		err = db.Select(&comments, query, p.ID)
+// 		if err != nil {
+// 			return nil, err
+// 		}
 
-		// reverse
-		for i, j := 0, len(comments)-1; i < j; i, j = i+1, j-1 {
-			comments[i], comments[j] = comments[j], comments[i]
-		}
+// 		for i := 0; i < len(comments); i++ {
+// 			err := db.Get(&comments[i].User, "SELECT * FROM `users` WHERE `id` = ?", comments[i].UserID)
+// 			if err != nil {
+// 				return nil, err
+// 			}
+// 		}
 
-		p.Comments = comments
+// 		// reverse
+// 		for i, j := 0, len(comments)-1; i < j; i, j = i+1, j-1 {
+// 			comments[i], comments[j] = comments[j], comments[i]
+// 		}
 
-		err = db.Get(&p.User, "SELECT * FROM `users` WHERE `id` = ?", p.UserID)
-		if err != nil {
-			return nil, err
-		}
+// 		p.Comments = comments
 
-		p.CSRFToken = csrfToken
+// 		err = db.Get(&p.User, "SELECT * FROM `users` WHERE `id` = ?", p.UserID)
+// 		if err != nil {
+// 			return nil, err
+// 		}
 
-		if p.User.DelFlg == 0 {
-			posts = append(posts, p)
-		}
-		if len(posts) >= postsPerPage {
-			break
-		}
-	}
+// 		p.CSRFToken = csrfToken
 
-	return posts, nil
-}
+// 		if p.User.DelFlg == 0 {
+// 			posts = append(posts, p)
+// 		}
+// 		if len(posts) >= postsPerPage {
+// 			break
+// 		}
+// 	}
+
+// 	return posts, nil
+// }
 
 func imageURL(p Post) string {
 	ext := ""
@@ -421,6 +422,58 @@ func getLogout(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/", http.StatusFound)
 }
 
+type pc struct {
+	Cc     int `db:"comment_count"`
+	PostID int `db:"post_id"`
+}
+
+type posts struct {
+	posts []Post
+}
+
+func (p posts) asignComments() error {
+	pids := make([]int, 0, len(p.posts))
+	for _, r := range p.posts {
+		pids = append(pids, r.ID)
+	}
+
+	pcs := make([]pc, 0, len(p.posts))
+	query :=
+		`
+		SELECT
+			count(*) AS comment_count,
+			pc.post_id
+		FROM (
+			SELECT
+				post_id
+			FROM
+				comments
+			WHERE
+				post_id IN(?)) pc
+		GROUP BY
+			pc.post_id
+`
+	query, args, err := sqlx.In(query, pids)
+	if err != nil {
+		return err
+	}
+	err = db.Select(&pcs, query, args...)
+
+	if err != nil {
+		return err
+	}
+
+	for _, r := range p.posts {
+		for _, c := range pcs {
+			if r.ID == c.PostID {
+				r.CommentCount = c.Cc
+				break
+			}
+		}
+	}
+	return nil
+}
+
 func getIndex(w http.ResponseWriter, r *http.Request) {
 	me := getSessionUser(r)
 
@@ -433,7 +486,6 @@ func getIndex(w http.ResponseWriter, r *http.Request) {
 		p.body,
 		p.mime,
 		p.created_at,
-		cp.comment_count,
 		u.id AS 'user.id',
 		u.account_name AS 'user.account_name',
 		u.passhash AS 'user.passhash',
@@ -442,18 +494,9 @@ func getIndex(w http.ResponseWriter, r *http.Request) {
 		u.created_at AS 'user.created_at'
 	FROM
 		posts p
-	JOIN (
-		SELECT
-			count(*) AS comment_count,
-			post_id
-		FROM
-			comments
-		GROUP BY
-			post_id) cp
-	ON p.id = cp.post_id
 	JOIN users u 
 	ON p.user_id = u.id
-	AND u.del_flg = 0
+		AND u.del_flg = 0
 	ORDER BY
 		p.created_at DESC
 	LIMIT %d
@@ -462,8 +505,55 @@ func getIndex(w http.ResponseWriter, r *http.Request) {
 		log.Print(err)
 		return
 	}
+	// 	pids := make([]int, 0, len(results))
+	// 	for _, r := range results {
+	// 		pids = append(pids, r.ID)
+	// 	}
+
+	// 	pcs := make([]pc, 0, postsPerPage)
+	// 	query :=
+	// 		`
+	// 		SELECT
+	// 			count(*) AS comment_count,
+	// 			pc.post_id
+	// 		FROM (
+	// 			SELECT
+	// 				post_id
+	// 			FROM
+	// 				comments
+	// 			WHERE
+	// 				post_id IN(?)) pc
+	// 		GROUP BY
+	// 			pc.post_id
+	// `
+	// 	query, args, err := sqlx.In(query, pids)
+	// 	if err != nil {
+	// 		log.Print(err)
+	// 		return
+	// 	}
+	// 	err = db.Select(&pcs, query, args...)
+
+	// 	if err != nil {
+	// 		log.Print(err)
+	// 		return
+	// 	}
+
+	// 	for _, r := range results {
+	// 		for _, c := range pcs {
+	// 			if r.ID == c.PostID {
+	// 				r.CommentCount = c.Cc
+	// 				break
+	// 			}
+	// 		}
+	// 	}
+	res := posts{posts: results}
+	err = res.asignComments()
+	if err != nil {
+		log.Print(err)
+		return
+	}
 	token := getCSRFToken(r)
-	posts, err := makePostsWithLimit(results, token)
+	posts, err := makePostsWithLimit(res.posts, token)
 	if err != nil {
 		log.Print(err)
 		return
@@ -521,7 +611,6 @@ func getAccountName(w http.ResponseWriter, r *http.Request) {
 		p.body,
 		p.mime,
 		p.created_at,
-		cp.comment_count,
 		u.id AS 'user.id',
 		u.account_name AS 'user.account_name',
 		u.passhash AS 'user.passhash',
@@ -530,15 +619,6 @@ func getAccountName(w http.ResponseWriter, r *http.Request) {
 		u.created_at AS 'user.created_at'
 	FROM
 		posts p
-	JOIN (
-		SELECT
-			count(*) AS comment_count,
-			post_id
-		FROM
-			comments
-		GROUP BY
-			post_id) cp
-	ON p.id = cp.post_id
 	JOIN users u 
 	ON p.user_id = u.id
 	AND u.del_flg = 0
@@ -550,8 +630,15 @@ func getAccountName(w http.ResponseWriter, r *http.Request) {
 		log.Print(err)
 		return
 	}
+	res := posts{posts: results}
+	err = res.asignComments()
+	if err != nil {
+		log.Print(err)
+		return
+	}
+
 	token := getCSRFToken(r)
-	posts, err := makePostsWithLimit(results, token)
+	posts, err := makePostsWithLimit(res.posts, token)
 	if err != nil {
 		log.Print(err)
 		return
@@ -639,7 +726,6 @@ func getPosts(w http.ResponseWriter, r *http.Request) {
 		p.body,
 		p.mime,
 		p.created_at,
-		cp.comment_count,
 		u.id AS 'user.id',
 		u.account_name AS 'user.account_name',
 		u.passhash AS 'user.passhash',
@@ -648,15 +734,6 @@ func getPosts(w http.ResponseWriter, r *http.Request) {
 		u.created_at AS 'user.created_at'
 	FROM
 		posts p
-	JOIN (
-		SELECT
-			count(*) AS comment_count,
-			post_id
-		FROM
-			comments
-		GROUP BY
-			post_id) cp
-	ON p.id = cp.post_id
 	JOIN users u 
 	ON p.user_id = u.id
 		AND u.del_flg = 0
@@ -670,7 +747,14 @@ func getPosts(w http.ResponseWriter, r *http.Request) {
 		log.Print(err)
 		return
 	}
-	posts, err := makePostsWithLimit(results, getCSRFToken(r))
+	res := posts{posts: results}
+	err = res.asignComments()
+	if err != nil {
+		log.Print(err)
+		return
+	}
+
+	posts, err := makePostsWithLimit(res.posts, getCSRFToken(r))
 	if err != nil {
 		log.Print(err)
 		return
@@ -707,7 +791,6 @@ func getPostsID(w http.ResponseWriter, r *http.Request) {
 		p.body,
 		p.mime,
 		p.created_at,
-		IFNULL(cp.comment_count,0) AS comment_count,
 		u.id AS 'user.id',
 		u.account_name AS 'user.account_name',
 		u.passhash AS 'user.passhash',
@@ -716,21 +799,11 @@ func getPostsID(w http.ResponseWriter, r *http.Request) {
 		u.created_at AS 'user.created_at'
 	FROM
 		posts p
-	LEFT JOIN (
-		SELECT
-			count(*) AS comment_count,
-			post_id
-		FROM
-			comments
-		group by post_id
-		having post_id = %d
-		) cp
-	ON p.id = cp.post_id
 		JOIN users u 
 	ON p.user_id = u.id
 	WHERE
 		p.id = %d
-	`, pid, pid))
+	`, pid))
 
 	if err != nil {
 		log.Print(err)
@@ -738,6 +811,12 @@ func getPostsID(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusNotFound)
 			return
 		}
+		return
+	}
+	res := posts{posts: []Post{result}}
+	err = res.asignComments()
+	if err != nil {
+		log.Print(err)
 		return
 	}
 
@@ -766,6 +845,7 @@ func getPostsID(w http.ResponseWriter, r *http.Request) {
 		log.Print(err)
 		return
 	}
+	result = res.posts[0]
 	result.Comments = comments
 	result.CSRFToken = getCSRFToken(r)
 

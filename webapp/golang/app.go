@@ -940,6 +940,26 @@ func postIndex(w http.ResponseWriter, r *http.Request) {
 		log.Print(err)
 		return
 	}
+	var filename string
+	switch mime {
+	case "image/jpeg":
+		filename = fmt.Sprintf("image/%d.jpg", pid)
+	case "image/gif":
+		filename = fmt.Sprintf("image/%d.gif", pid)
+	case "image/png":
+		filename = fmt.Sprintf("image/%d.png", pid)
+	}
+
+	f, err := os.Create(filename)
+	if err != nil {
+		log.Print(err)
+		return
+	}
+	_, err = f.Write(filedata)
+	if err != nil {
+		log.Print(err)
+		return
+	}
 
 	http.Redirect(w, r, "/posts/"+strconv.FormatInt(pid, 10), http.StatusFound)
 }

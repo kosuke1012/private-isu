@@ -33,9 +33,9 @@ func main() {
 	}
 	user := os.Getenv("ISUCONP_DB_USER")
 	if user == "" {
-		user = "root"
+		user = "isuconp"
 	}
-	password := "root"
+	password := "isuconp"
 	dbname := os.Getenv("ISUCONP_DB_NAME")
 	if dbname == "" {
 		dbname = "isuconp"
@@ -65,11 +65,11 @@ func main() {
 		var filename string
 		switch img.Mime {
 		case "image/jpeg":
-			filename = fmt.Sprintf("%d.jpg", img.ID)
+			filename = fmt.Sprintf("/home/isucon/private_isu/webapp/public/image/%d.jpg", img.ID)
 		case "image/gif":
-			filename = fmt.Sprintf("%d.gif", img.ID)
+			filename = fmt.Sprintf("/home/isucon/private_isu/webapp/public/image/%d.gif", img.ID)
 		case "image/png":
-			filename = fmt.Sprintf("%d.png", img.ID)
+			filename = fmt.Sprintf("/home/isucon/private_isu/webapp/public/image/%d.png", img.ID)
 		}
 
 		f, err := os.Create(filename)

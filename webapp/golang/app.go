@@ -493,7 +493,7 @@ func getIndex(w http.ResponseWriter, r *http.Request) {
 		0 AS 'user.del_flg',
 		u.created_at AS 'user.created_at'
 	FROM
-		posts p
+		posts p FORCE INDEX (posts_order_idx)
 	JOIN users u 
 	ON p.user_id = u.id
 		AND u.del_flg = 0
@@ -618,7 +618,7 @@ func getAccountName(w http.ResponseWriter, r *http.Request) {
 		0 AS 'user.del_flg',
 		u.created_at AS 'user.created_at'
 	FROM
-		posts p
+		posts p FORCE INDEX (posts_order_idx)
 	JOIN users u 
 	ON p.user_id = u.id
 	AND u.del_flg = 0
@@ -733,7 +733,7 @@ func getPosts(w http.ResponseWriter, r *http.Request) {
 		0 AS 'user.del_flg',
 		u.created_at AS 'user.created_at'
 	FROM
-		posts p
+		posts p FORCE INDEX (posts_order_idx)
 	JOIN users u 
 	ON p.user_id = u.id
 		AND u.del_flg = 0
@@ -943,11 +943,11 @@ func postIndex(w http.ResponseWriter, r *http.Request) {
 	var filename string
 	switch mime {
 	case "image/jpeg":
-		filename = fmt.Sprintf("image/%d.jpg", pid)
+		filename = fmt.Sprintf("/home/isucon/private_isu/webapp/public/image/%d.jpg", pid)
 	case "image/gif":
-		filename = fmt.Sprintf("image/%d.gif", pid)
+		filename = fmt.Sprintf("/home/isucon/private_isu/webapp/public/image/%d.gif", pid)
 	case "image/png":
-		filename = fmt.Sprintf("image/%d.png", pid)
+		filename = fmt.Sprintf("/home/isucon/private_isu/webapp/public/image/%d.png", pid)
 	}
 
 	f, err := os.Create(filename)

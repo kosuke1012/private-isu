@@ -5,6 +5,7 @@ import (
 	crand "crypto/rand"
 	"crypto/sha512"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"html/template"
 	"io"
@@ -41,14 +42,21 @@ const (
 )
 
 type User struct {
-	ID          int       `db:"id"`
-	AccountName string    `db:"account_name"`
-	Passhash    string    `db:"passhash"`
-	Authority   int       `db:"authority"`
-	DelFlg      int       `db:"del_flg"`
-	CreatedAt   time.Time `db:"created_at"`
+	ID          int       `db:"id" json:"id"`
+	AccountName string    `db:"account_name" json:"account_name"`
+	Passhash    string    `db:"passhash" json:"passhash"`
+	Authority   int       `db:"authority" json:"authority"`
+	DelFlg      int       `db:"del_flg" json:"del_flg"`
+	CreatedAt   time.Time `db:"created_at" json:"created_at"`
 }
 
+// c.*,
+// u.id AS 'user.id',
+// u.account_name AS 'user.account_name',
+// u.passhash AS 'user.passhash',
+// u.authority AS 'user.authority',
+// u.del_flg AS 'user.del_flg',
+// u.created_at AS 'user.created_at'
 type Post struct {
 	ID           int       `db:"id"`
 	UserID       int       `db:"user_id"`
@@ -63,11 +71,11 @@ type Post struct {
 }
 
 type Comment struct {
-	ID        int       `db:"id"`
-	PostID    int       `db:"post_id"`
-	UserID    int       `db:"user_id"`
-	Comment   string    `db:"comment"`
-	CreatedAt time.Time `db:"created_at"`
+	ID        int       `db:"id" json:"id"`
+	PostID    int       `db:"post_id" json:"post_id"`
+	UserID    int       `db:"user_id" json:"user_id"`
+	Comment   string    `db:"comment" json:"comment" `
+	CreatedAt time.Time `db:"created_at" json:"created_at"`
 	User      User      `db:"user"`
 }
 
@@ -181,7 +189,26 @@ func makePostsWithLimit(results []Post, csrfToken string) ([]Post, error) {
 
 	for _, r := range results {
 		comments := make([]Comment, 0, 3)
-		err := db.Select(&comments, `
+		key := fmt.Sprintf("comments.%d.3", r.ID)
+		b, _, _, err := store.Client.Get(key)
+		if err != nil && err != memcache.ErrCacheMiss {
+			log.Print(err)
+			return nil, err
+		}
+		if err != memcache.ErrCacheMiss {
+			err = json.Unmarshal([]byte(b), &comments)
+			if err != nil {
+				log.Print(err)
+				return nil, err
+			}
+			p := r
+			p.Comments = comments
+			p.CSRFToken = csrfToken
+			posts = append(posts, p)
+			continue
+		}
+
+		err = db.Select(&comments, `
 		SELECT
 			c.*,
 			u.id AS 'user.id',
@@ -208,6 +235,16 @@ func makePostsWithLimit(results []Post, csrfToken string) ([]Post, error) {
 		p.Comments = comments
 		p.CSRFToken = csrfToken
 		posts = append(posts, p)
+		bytes, err := json.Marshal(comments)
+		if err != nil {
+			log.Print(err)
+			return nil, err
+		}
+		_, err = store.Client.Set(key, string(bytes), 0, 0, 0)
+		if err != nil {
+			log.Print(err)
+			return nil, err
+		}
 	}
 	return posts, nil
 

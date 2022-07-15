@@ -5,6 +5,7 @@ import (
 	crand "crypto/rand"
 	"crypto/sha512"
 	"database/sql"
+
 	"encoding/json"
 	"fmt"
 	"html/template"
@@ -19,6 +20,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	// "github.com/goccy/go-json"
 
 	"github.com/bradfitz/gomemcache/memcache"
 	gsm "github.com/bradleypeabody/gorilla-sessions-memcache"
@@ -757,7 +760,20 @@ func getPostsID(w http.ResponseWriter, r *http.Request) {
 	}
 
 	comments := make([]Comment, 0, 30)
-	err = db.Select(&comments, `
+	key := fmt.Sprintf("comments.%d.ALL", pid)
+	b, _, _, err := store.Client.Get(key)
+	if err != nil && err != memcache.ErrCacheMiss {
+		log.Print(err)
+		return
+	}
+	if err != memcache.ErrCacheMiss {
+		err = json.Unmarshal([]byte(b), &comments)
+		if err != nil {
+			log.Print(err)
+			return
+		}
+	} else {
+		err = db.Select(&comments, `
 		SELECT
 			c.*,
 			u.id AS 'user.id',
@@ -776,10 +792,21 @@ func getPostsID(w http.ResponseWriter, r *http.Request) {
 			id ASC
 		
 		`, pid)
-	if err != nil {
+		if err != nil {
 
-		log.Print(err)
-		return
+			log.Print(err)
+			return
+		}
+		bytes, err := json.Marshal(comments)
+		if err != nil {
+			log.Print(err)
+			return
+		}
+		_, err = store.Client.Set(key, string(bytes), 0, 0, 0)
+		if err != nil {
+			log.Print(err)
+			return
+		}
 	}
 	result = res.posts[0]
 	result.Comments = comments

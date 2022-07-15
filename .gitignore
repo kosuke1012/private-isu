@@ -16,3 +16,7 @@ portal/tmp
 !/portal/log/.keep
 /portal/tmp
 .vagrant
+
+/webapp/public/image
+.env
+*.log
